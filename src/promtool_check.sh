@@ -4,26 +4,29 @@ function promtool_check {
 
     # gather check promtool output
     echo "check: info: promtool check for ${prom_check_files}."
+    changed_files="$(git diff HEAD^ --name-only | grep $(dirname prom_check_files))"
+    for c in $changed_files; do
+      check_output="$(promtool check "$prom_check_subcommand" <(oq -i yaml '{"groups": .}' $c))"
+      check_exit_code=${?}
 
-    check_output=$(promtool check ${prom_check_subcommand} ${prom_check_files} 2>&1)
+      # exit code 0 - success
+      if [ ${check_exit_code} -eq 0 ];then
+          check_comment_status="Success"
+          echo "check: info: successfully executed promtool check for ${c}."
+          echo "${check_output}"
+          echo
+      fi
 
-    check_exit_code=${?}
-
-    # exit code 0 - success
-    if [ ${check_exit_code} -eq 0 ];then
-        check_comment_status="Success"
-        echo "check: info: successfully executed promtool check for ${prom_check_files}."
-        echo "${check_output}"
-        echo
-    fi
-
-    # exit code !0 - failure
-    if [ ${check_exit_code} -ne 0 ]; then
-        check_comment_status="Failed"
-        echo "check: error: failed to execute promtool check for ${prom_check_files}."
-        echo "${check_output}"
-        echo
-    fi
+      # exit code !0 - failure
+      # NOTE(arthurb): This fast fails, which isn't ideal, but good enough for now
+      if [ ${check_exit_code} -ne 0 ]; then
+          check_comment_status="Failed"
+          echo "check: error: failed to execute promtool check for ${c}."
+          echo "${check_output}"
+          echo
+          break
+      fi
+    done
 
     # comment
     if [ "${GITHUB_EVENT_NAME}" == "pull_request" ] && [ "${prom_comment}" == "1" ]; then
